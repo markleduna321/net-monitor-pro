@@ -1,0 +1,47 @@
+{
+    "app_name": "NetMonitor Pro",
+    "host": "0.0.0.0",
+    "port": 8081,
+    "database": "netmonitor.db",
+    "ping_interval_seconds": 30,
+    "bandwidth_interval_seconds": 5,
+    "data_retention_days": 30,
+    "targets": [
+        {
+            "name": "Google DNS",
+            "ip": "8.8.8.8",
+            "type": "ping",
+            "enabled": true
+        },
+        {
+            "name": "Cloudflare DNS",
+            "ip": "1.1.1.1",
+            "type": "ping",
+            "enabled": true
+        },
+        {
+            "name": "OpenDNS",
+            "ip": "208.67.222.222",
+            "type": "ping",
+            "enabled": true
+        },
+        {
+            "name": "Parasat",
+            "ip": "206.62.43.148",
+            "type": "ping",
+            "enabled": true
+        }
+    ],
+    "gateways": [
+        {
+            "name": "Primary Gateway",
+            "interface": "en0",
+            "enabled": true
+        }
+    ],
+    "alerts": {
+        "enabled": true,
+        "ping_threshold_ms": 100,
+        "packet_loss_threshold_percent": 5
+    }
+}

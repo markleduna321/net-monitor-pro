@@ -1,0 +1,62 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Build executable
+      run: python build_exe.py
+    
+    - name: Create release package
+      run: |
+        mkdir release
+        copy dist\NetMonitorPro.exe release\
+        copy config.json release\
+        copy README.md release\
+        copy BUILD_WINDOWS.md release\INSTALL.md
+      shell: cmd
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: NetMonitorPro-Windows
+        path: release/
+        retention-days: 30
+    
+    - name: Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release/NetMonitorPro.exe
+          release/config.json
+          release/README.md
+          release/INSTALL.md
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

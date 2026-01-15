@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }} - Network Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .glass {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .status-success { color: #10b981; }
+        .status-warning { color: #f59e0b; }
+        .status-error { color: #ef4444; }
+        .pulse-success { animation: pulse-green 2s infinite; }
+        .pulse-error { animation: pulse-red 2s infinite; }
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+        }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        }
+        .chart-container {
+            position: relative;
+            height: 200px;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 min-h-screen text-white">
+    <!-- Header -->
+    <header class="glass sticky top-0 z-50 px-6 py-4">
+        <div class="container mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-network-wired text-3xl text-purple-400"></i>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                    {{ app_name }}
+                </h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div id="connection-status" class="flex items-center space-x-2">
+                    <span class="w-3 h-3 rounded-full bg-gray-500" id="ws-indicator"></span>
+                    <span class="text-sm text-gray-400" id="ws-status">Connecting...</span>
+                </div>
+                <button onclick="location.reload()" class="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 transition">
+                    <i class="fas fa-refresh"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-8">
+        <!-- Statistics Overview -->
+        <section class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="glass rounded-2xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Targets Monitored</p>
+                        <p class="text-3xl font-bold" id="stat-targets">0</p>
+                    </div>
+                    <i class="fas fa-bullseye text-4xl text-purple-400 opacity-50"></i>
+                </div>
+            </div>
+            <div class="glass rounded-2xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Avg Latency</p>
+                        <p class="text-3xl font-bold" id="stat-latency">-- ms</p>
+                    </div>
+                    <i class="fas fa-clock text-4xl text-green-400 opacity-50"></i>
+                </div>
+            </div>
+            <div class="glass rounded-2xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Download</p>
+                        <p class="text-3xl font-bold" id="stat-download">0 B/s</p>
+                    </div>
+                    <i class="fas fa-download text-4xl text-blue-400 opacity-50"></i>
+                </div>
+            </div>
+            <div class="glass rounded-2xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm">Upload</p>
+                        <p class="text-3xl font-bold" id="stat-upload">0 B/s</p>
+                    </div>
+                    <i class="fas fa-upload text-4xl text-pink-400 opacity-50"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Ping Monitoring Section -->
+            <section class="glass rounded-2xl p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-semibold flex items-center">
+                        <i class="fas fa-satellite-dish mr-3 text-purple-400"></i>
+                        Ping Monitoring
+                    </h2>
+                    <div class="flex items-center space-x-3">
+                        <span class="text-xs text-gray-400" id="ping-last-update">Never</span>
+                        <button onclick="openAddTargetModal()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition flex items-center">
+                            <i class="fas fa-plus mr-2"></i> Add Target
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="ping-targets" class="space-y-4">
+                    <!-- Ping targets will be inserted here -->
+                    <div class="text-gray-400 text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                        <p>Loading targets...</p>
+                    </div>
+                </div>
+                
+                <!-- Latency Chart -->
+                <div class="mt-6">
+                    <h3 class="text-sm font-medium text-gray-400 mb-3">Latency History (Last Hour)</h3>
+                    <div class="chart-container">
+                        <canvas id="latencyChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bandwidth Monitoring Section -->
+            <section class="glass rounded-2xl p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-semibold flex items-center">
+                        <i class="fas fa-tachometer-alt mr-3 text-blue-400"></i>
+                        Bandwidth Monitor
+                    </h2>
+                    <span class="text-xs text-gray-400" id="bandwidth-last-update">Never</span>
+                </div>
+                
+                <div id="bandwidth-gateways" class="space-y-4">
+                    <!-- Gateways will be inserted here -->
+                    <div class="text-gray-400 text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                        <p>Loading gateways...</p>
+                    </div>
+                </div>
+                
+                <!-- Bandwidth Chart -->
+                <div class="mt-6">
+                    <h3 class="text-sm font-medium text-gray-400 mb-3">Bandwidth History (Last Hour)</h3>
+                    <div class="chart-container">
+                        <canvas id="bandwidthChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Alerts Section -->
+        <section class="glass rounded-2xl p-6 mt-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold flex items-center">
+                    <i class="fas fa-bell mr-3 text-yellow-400"></i>
+                    Recent Alerts
+                    <span id="alert-badge" class="ml-2 px-2 py-1 text-xs bg-red-500 rounded-full hidden">0</span>
+                </h2>
+                <button onclick="loadAlerts()" class="text-sm text-purple-400 hover:text-purple-300">
+                    <i class="fas fa-refresh mr-1"></i> Refresh
+                </button>
+            </div>
+            
+            <div id="alerts-container" class="space-y-3 max-h-64 overflow-y-auto">
+                <div class="text-gray-400 text-center py-4">
+                    <i class="fas fa-check-circle text-2xl mb-2 text-green-400"></i>
+                    <p>No alerts</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Analytics Section -->
+        <section class="glass rounded-2xl p-6 mt-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold flex items-center">
+                    <i class="fas fa-chart-bar mr-3 text-cyan-400"></i>
+                    Ping Analytics
+                </h2>
+                <div class="flex items-center space-x-3">
+                    <select id="analytics-target-filter" onchange="loadAnalytics()" 
+                            class="px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-purple-500">
+                        <option value="">All Targets</option>
+                    </select>
+                    <select id="analytics-hours-filter" onchange="loadAnalytics()"
+                            class="px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-purple-500">
+                        <option value="1">Last 1 Hour</option>
+                        <option value="6">Last 6 Hours</option>
+                        <option value="24" selected>Last 24 Hours</option>
+                        <option value="72">Last 3 Days</option>
+                        <option value="168">Last 7 Days</option>
+                    </select>
+                    <button onclick="loadAnalytics()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm transition">
+                        <i class="fas fa-refresh"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Analytics Stats Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Peak Latency</p>
+                    <p class="text-2xl font-bold text-red-400" id="analytics-peak-latency">-- ms</p>
+                </div>
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Avg Latency</p>
+                    <p class="text-2xl font-bold text-green-400" id="analytics-avg-latency">-- ms</p>
+                </div>
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Total Timeouts</p>
+                    <p class="text-2xl font-bold text-yellow-400" id="analytics-timeouts">0</p>
+                </div>
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Success Rate</p>
+                    <p class="text-2xl font-bold text-blue-400" id="analytics-success-rate">--%</p>
+                </div>
+            </div>
+            
+            <!-- Worst Hour Alert -->
+            <div id="worst-hour-alert" class="hidden bg-orange-500/20 border border-orange-500/50 rounded-xl p-4 mb-6">
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-orange-400 mr-3"></i>
+                    <div>
+                        <p class="font-medium text-orange-400">Peak Issue Time Detected</p>
+                        <p class="text-sm text-gray-300" id="worst-hour-message"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hourly Breakdown Chart -->
+            <div class="mb-6">
+                <h3 class="text-sm font-medium text-gray-400 mb-3">Hourly Performance Pattern</h3>
+                <div class="chart-container" style="height: 180px;">
+                    <canvas id="hourlyChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Top Peak Latencies -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                    <h3 class="text-sm font-medium text-gray-400 mb-3">
+                        <i class="fas fa-arrow-up text-red-400 mr-2"></i>Top 5 Peak Latencies
+                    </h3>
+                    <div id="peak-latencies-list" class="space-y-2 max-h-48 overflow-y-auto">
+                        <p class="text-gray-500 text-sm">Loading...</p>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-sm font-medium text-gray-400 mb-3">
+                        <i class="fas fa-times-circle text-yellow-400 mr-2"></i>Recent Timeouts
+                    </h3>
+                    <div id="timeout-incidents-list" class="space-y-2 max-h-48 overflow-y-auto">
+                        <p class="text-gray-500 text-sm">Loading...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Per-Target Statistics -->
+            <div>
+                <h3 class="text-sm font-medium text-gray-400 mb-3">
+                    <i class="fas fa-bullseye text-purple-400 mr-2"></i>Per-Target Statistics
+                </h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-gray-400 border-b border-white/10">
+                                <th class="text-left py-2 px-3">Target</th>
+                                <th class="text-right py-2 px-3">Total Pings</th>
+                                <th class="text-right py-2 px-3">Success</th>
+                                <th class="text-right py-2 px-3">Timeouts</th>
+                                <th class="text-right py-2 px-3">Avg (ms)</th>
+                                <th class="text-right py-2 px-3">Min (ms)</th>
+                                <th class="text-right py-2 px-3">Max (ms)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="target-stats-table">
+                            <tr><td colspan="7" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Ping Logs Section -->
+        <section class="glass rounded-2xl p-6 mt-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold flex items-center">
+                    <i class="fas fa-database mr-3 text-indigo-400"></i>
+                    Ping Logs
+                </h2>
+                <div class="flex items-center space-x-3">
+                    <select id="logs-target-filter" onchange="loadPingLogs(1)"
+                            class="px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-purple-500">
+                        <option value="">All Targets</option>
+                    </select>
+                    <select id="logs-status-filter" onchange="loadPingLogs(1)"
+                            class="px-3 py-1.5 bg-black/30 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-purple-500">
+                        <option value="">All Status</option>
+                        <option value="success">Success</option>
+                        <option value="timeout">Timeout</option>
+                        <option value="error">Error</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-gray-400 border-b border-white/10">
+                            <th class="text-left py-2 px-3">Time</th>
+                            <th class="text-left py-2 px-3">Target</th>
+                            <th class="text-left py-2 px-3">IP</th>
+                            <th class="text-right py-2 px-3">Latency</th>
+                            <th class="text-right py-2 px-3">Loss %</th>
+                            <th class="text-center py-2 px-3">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ping-logs-table">
+                        <tr><td colspan="6" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            <div class="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
+                <p class="text-sm text-gray-400" id="logs-pagination-info">Showing 0 of 0</p>
+                <div class="flex space-x-2">
+                    <button onclick="loadPingLogs(currentLogsPage - 1)" id="logs-prev-btn"
+                            class="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-chevron-left"></i> Prev
+                    </button>
+                    <span class="px-3 py-1 text-sm" id="logs-page-indicator">Page 1</span>
+                    <button onclick="loadPingLogs(currentLogsPage + 1)" id="logs-next-btn"
+                            class="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                        Next <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Live Activity Log Section -->
+        <section class="glass rounded-2xl p-6 mt-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold flex items-center">
+                    <i class="fas fa-list mr-3 text-gray-400"></i>
+                    Live Activity Log
+                </h2>
+                <div class="flex space-x-2">
+                    <button onclick="clearLogs()" class="text-sm text-gray-400 hover:text-gray-300">
+                        <i class="fas fa-trash mr-1"></i> Clear
+                    </button>
+                </div>
+            </div>
+            
+            <div id="logs-container" class="font-mono text-sm bg-black/30 rounded-lg p-4 h-48 overflow-y-auto">
+                <div class="text-gray-500">Waiting for events...</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center py-6 text-gray-500 text-sm">
+        <p>{{ app_name }} v1.0.0 | Real-time Network Monitoring</p>
+    </footer>
+
+    <!-- Add Target Modal -->
+    <div id="add-target-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center">
+        <div class="glass rounded-2xl p-6 w-full max-w-md mx-4">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-semibold">Add Ping Target</h3>
+                <button onclick="closeAddTargetModal()" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <form id="add-target-form" onsubmit="submitAddTarget(event)">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-2">Target Name</label>
+                        <input type="text" id="target-name" required
+                               placeholder="e.g., My ISP Gateway"
+                               class="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg focus:outline-none focus:border-purple-500 text-white placeholder-gray-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-2">IP Address</label>
+                        <input type="text" id="target-ip" required
+                               placeholder="e.g., 192.168.1.1"
+                               pattern="^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                               class="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg focus:outline-none focus:border-purple-500 text-white placeholder-gray-500">
+                        <p class="text-xs text-gray-500 mt-1">Enter a valid IPv4 address</p>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <input type="checkbox" id="target-enabled" checked
+                               class="w-4 h-4 rounded bg-black/30 border-white/10 text-purple-600 focus:ring-purple-500">
+                        <label for="target-enabled" class="ml-2 text-sm text-gray-400">Enable monitoring immediately</label>
+                    </div>
+                </div>
+                
+                <div class="flex space-x-3 mt-6">
+                    <button type="button" onclick="closeAddTargetModal()" 
+                            class="flex-1 px-4 py-3 bg-gray-600 hover:bg-gray-700 rounded-lg font-medium transition">
+                        Cancel
+                    </button>
+                    <button type="submit" id="add-target-btn"
+                            class="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-medium transition">
+                        <i class="fas fa-plus mr-2"></i> Add Target
+                    </button>
+                </div>
+            </form>
+            
+            <div id="add-target-error" class="hidden mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+            </div>
+        </div>
+    </div>
+
+    <!-- Target Details Modal -->
+    <div id="target-details-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center overflow-y-auto">
+        <div class="glass rounded-2xl p-6 w-full max-w-4xl mx-4 my-8">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-xl font-semibold" id="target-modal-title">Target Details</h3>
+                    <p class="text-gray-400 text-sm" id="target-modal-ip"></p>
+                </div>
+                <button onclick="closeTargetDetailsModal()" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <!-- Current Status -->
+            <div class="bg-black/20 rounded-xl p-4 mb-6">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-4 h-4 rounded-full" id="target-modal-status-indicator"></div>
+                        <div>
+                            <p class="text-sm text-gray-400">Current Status</p>
+                            <p class="text-xl font-bold" id="target-modal-current-latency">-- ms</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-400">Last Checked</p>
+                        <p class="text-sm" id="target-modal-last-check">--</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Total Pings</p>
+                    <p class="text-2xl font-bold text-white" id="target-modal-total-pings">0</p>
+                </div>
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Success Rate</p>
+                    <p class="text-2xl font-bold text-green-400" id="target-modal-success-rate">--%</p>
+                </div>
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Timeouts</p>
+                    <p class="text-2xl font-bold text-yellow-400" id="target-modal-timeouts">0</p>
+                </div>
+                <div class="bg-black/20 rounded-xl p-4 text-center">
+                    <p class="text-gray-400 text-xs mb-1">Avg Packet Loss</p>
+                    <p class="text-2xl font-bold text-orange-400" id="target-modal-packet-loss">0%</p>
+                </div>
+            </div>
+            
+            <!-- Latency Stats -->
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-center">
+                    <p class="text-green-400 text-xs mb-1">Min Latency</p>
+                    <p class="text-2xl font-bold text-green-400" id="target-modal-min-latency">-- ms</p>
+                </div>
+                <div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-center">
+                    <p class="text-blue-400 text-xs mb-1">Avg Latency</p>
+                    <p class="text-2xl font-bold text-blue-400" id="target-modal-avg-latency">-- ms</p>
+                </div>
+                <div class="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
+                    <p class="text-red-400 text-xs mb-1">Max Latency</p>
+                    <p class="text-2xl font-bold text-red-400" id="target-modal-max-latency">-- ms</p>
+                </div>
+            </div>
+            
+            <!-- Latency History Chart -->
+            <div class="mb-6">
+                <h4 class="text-sm font-medium text-gray-400 mb-3">Latency History (Last 24 Hours)</h4>
+                <div class="bg-black/20 rounded-xl p-4">
+                    <div style="height: 200px;">
+                        <canvas id="targetLatencyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hourly Performance -->
+            <div class="mb-6">
+                <h4 class="text-sm font-medium text-gray-400 mb-3">Hourly Performance Pattern</h4>
+                <div class="bg-black/20 rounded-xl p-4">
+                    <div style="height: 150px;">
+                        <canvas id="targetHourlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Logs -->
+            <div>
+                <h4 class="text-sm font-medium text-gray-400 mb-3">Recent Ping Logs</h4>
+                <div class="bg-black/20 rounded-xl overflow-hidden">
+                    <div class="max-h-64 overflow-y-auto">
+                        <table class="w-full text-sm">
+                            <thead class="sticky top-0 bg-black/50">
+                                <tr class="text-gray-400 border-b border-white/10">
+                                    <th class="text-left py-2 px-3">Time</th>
+                                    <th class="text-right py-2 px-3">Latency</th>
+                                    <th class="text-right py-2 px-3">Loss</th>
+                                    <th class="text-center py-2 px-3">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="target-modal-logs">
+                                <tr><td colspan="4" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="mt-6 flex justify-between items-center">
+                <div class="flex space-x-2">
+                    <button onclick="downloadTargetStats('csv')" 
+                            class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-medium transition flex items-center">
+                        <i class="fas fa-file-csv mr-2"></i> Download CSV
+                    </button>
+                    <button onclick="downloadTargetStats('json')" 
+                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition flex items-center">
+                        <i class="fas fa-file-code mr-2"></i> Download JSON
+                    </button>
+                </div>
+                <button onclick="closeTargetDetailsModal()" 
+                        class="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-medium transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let ws = null;
+        let latencyChart = null;
+        let bandwidthChart = null;
+        let hourlyChart = null;
+        let pingData = {};
+        let bandwidthData = {};
+        let currentLogsPage = 1;
+        let totalLogsPages = 1;
+        let knownTargets = [];
+        const MAX_DATA_POINTS = 60;
+
+        // Utility functions
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatBytesRate(bytesPerSec) {
+            return formatBytes(bytesPerSec) + '/s';
+        }
+
+        function formatTime(isoString) {
+            return new Date(isoString).toLocaleTimeString();
+        }
+
+        function addLog(message, type = 'info') {
+            const container = document.getElementById('logs-container');
+            const timestamp = new Date().toLocaleTimeString();
+            const colors = {
+                'info': 'text-blue-400',
+                'success': 'text-green-400',
+                'warning': 'text-yellow-400',
+                'error': 'text-red-400'
+            };
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = colors[type] || 'text-gray-400';
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            // Remove "Waiting for events..." message
+            if (container.children[0]?.textContent === 'Waiting for events...') {
+                container.innerHTML = '';
+            }
+            
+            container.appendChild(logEntry);
+            container.scrollTop = container.scrollHeight;
+            
+            // Keep only last 100 entries
+            while (container.children.length > 100) {
+                container.removeChild(container.firstChild);
+            }
+        }
+
+        function clearLogs() {
+            document.getElementById('logs-container').innerHTML = '<div class="text-gray-500">Waiting for events...</div>';
+        }
+
+        // Target Details Modal
+        let targetLatencyChart = null;
+        let targetHourlyChart = null;
+        let currentTargetName = null;
+
+        async function openTargetDetailsModal(targetName, targetIp) {
+            currentTargetName = targetName;
+            
+            // Set title and IP
+            document.getElementById('target-modal-title').textContent = targetName;
+            document.getElementById('target-modal-ip').textContent = targetIp;
+            
+            // Show modal
+            document.getElementById('target-details-modal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+            
+            // Initialize charts if not exists
+            initTargetCharts();
+            
+            // Load data
+            await loadTargetDetails(targetName);
+        }
+
+        function closeTargetDetailsModal() {
+            document.getElementById('target-details-modal').classList.add('hidden');
+            document.body.style.overflow = '';
+            currentTargetName = null;
+        }
+
+        function initTargetCharts() {
+            // Destroy existing charts
+            if (targetLatencyChart) {
+                targetLatencyChart.destroy();
+            }
+            if (targetHourlyChart) {
+                targetHourlyChart.destroy();
+            }
+            
+            // Latency History Chart
+            const latencyCtx = document.getElementById('targetLatencyChart').getContext('2d');
+            targetLatencyChart = new Chart(latencyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Latency (ms)',
+                        data: [],
+                        borderColor: 'rgb(139, 92, 246)',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: 'rgba(255,255,255,0.5)', maxTicksLimit: 12 }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: 'rgba(255,255,255,0.5)' },
+                            title: { display: true, text: 'ms', color: 'rgba(255,255,255,0.5)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+            
+            // Hourly Chart
+            const hourlyCtx = document.getElementById('targetHourlyChart').getContext('2d');
+            targetHourlyChart = new Chart(hourlyCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Avg Latency',
+                            data: [],
+                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                            borderColor: 'rgb(59, 130, 246)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Timeouts',
+                            data: [],
+                            backgroundColor: 'rgba(251, 191, 36, 0.6)',
+                            borderColor: 'rgb(251, 191, 36)',
+                            borderWidth: 1,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: 'rgba(255,255,255,0.5)' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            position: 'left',
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: 'rgba(255,255,255,0.5)' },
+                            title: { display: true, text: 'Latency (ms)', color: 'rgba(255,255,255,0.5)' }
+                        },
+                        y1: {
+                            beginAtZero: true,
+                            position: 'right',
+                            grid: { display: false },
+                            ticks: { color: 'rgba(251, 191, 36, 0.7)' },
+                            title: { display: true, text: 'Timeouts', color: 'rgba(251, 191, 36, 0.7)' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: 'rgba(255,255,255,0.7)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadTargetDetails(targetName) {
+            try {
+                // Load analytics for this specific target
+                const response = await fetch(`/api/analytics/ping?target=${encodeURIComponent(targetName)}&hours=24`);
+                const data = await response.json();
+                
+                // Update current status from ping monitor data
+                const currentData = pingData[targetName];
+                if (currentData && currentData.length > 0) {
+                    const latest = currentData[currentData.length - 1];
+                    const isSuccess = latest.y > 0;
+                    document.getElementById('target-modal-status-indicator').className = 
+                        `w-4 h-4 rounded-full ${isSuccess ? 'bg-green-500 pulse-success' : 'bg-red-500 pulse-error'}`;
+                    document.getElementById('target-modal-current-latency').textContent = 
+                        isSuccess ? `${latest.y.toFixed(1)} ms` : 'Timeout';
+                    document.getElementById('target-modal-last-check').textContent = 
+                        latest.x.toLocaleTimeString();
+                }
+                
+                // Update stats
+                const stats = data.overall_statistics[0] || {};
+                const successRate = stats.total_pings > 0 ? (stats.successful_pings / stats.total_pings * 100) : 0;
+                
+                document.getElementById('target-modal-total-pings').textContent = stats.total_pings || 0;
+                document.getElementById('target-modal-success-rate').textContent = `${successRate.toFixed(1)}%`;
+                document.getElementById('target-modal-timeouts').textContent = stats.timeouts || 0;
+                document.getElementById('target-modal-packet-loss').textContent = 
+                    stats.avg_packet_loss ? `${stats.avg_packet_loss.toFixed(1)}%` : '0%';
+                
+                document.getElementById('target-modal-min-latency').textContent = 
+                    stats.min_latency ? `${stats.min_latency.toFixed(1)} ms` : '-- ms';
+                document.getElementById('target-modal-avg-latency').textContent = 
+                    stats.avg_latency ? `${stats.avg_latency.toFixed(1)} ms` : '-- ms';
+                document.getElementById('target-modal-max-latency').textContent = 
+                    stats.max_latency ? `${stats.max_latency.toFixed(1)} ms` : '-- ms';
+                
+                // Update success rate color
+                const successRateEl = document.getElementById('target-modal-success-rate');
+                successRateEl.className = 'text-2xl font-bold ' + 
+                    (successRate >= 99 ? 'text-green-400' : successRate >= 95 ? 'text-yellow-400' : 'text-red-400');
+                
+                // Update latency chart
+                if (data.recent_logs && data.recent_logs.length > 0) {
+                    const sortedLogs = [...data.recent_logs].reverse();
+                    targetLatencyChart.data.labels = sortedLogs.map(l => {
+                        const d = new Date(l.timestamp);
+                        return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    });
+                    targetLatencyChart.data.datasets[0].data = sortedLogs.map(l => l.latency_ms || 0);
+                    targetLatencyChart.update();
+                }
+                
+                // Update hourly chart
+                if (data.hourly_breakdown) {
+                    const labels = [];
+                    const latencyData = [];
+                    const timeoutData = [];
+                    
+                    for (let h = 0; h < 24; h++) {
+                        labels.push(`${h.toString().padStart(2, '0')}:00`);
+                        const hourData = data.hourly_breakdown.find(d => parseInt(d.hour) === h);
+                        latencyData.push(hourData ? hourData.avg_latency || 0 : 0);
+                        timeoutData.push(hourData ? hourData.timeouts || 0 : 0);
+                    }
+                    
+                    targetHourlyChart.data.labels = labels;
+                    targetHourlyChart.data.datasets[0].data = latencyData;
+                    targetHourlyChart.data.datasets[1].data = timeoutData;
+                    targetHourlyChart.update();
+                }
+                
+                // Update logs table
+                const logsTable = document.getElementById('target-modal-logs');
+                if (data.recent_logs && data.recent_logs.length > 0) {
+                    logsTable.innerHTML = data.recent_logs.slice(0, 50).map(log => {
+                        const statusClass = log.status === 'success' ? 'bg-green-500' : 
+                                           log.status === 'timeout' ? 'bg-yellow-500' : 'bg-red-500';
+                        const latencyClass = !log.latency_ms ? 'text-gray-500' :
+                                            log.latency_ms > 100 ? 'text-red-400' : 
+                                            log.latency_ms > 50 ? 'text-yellow-400' : 'text-green-400';
+                        return `
+                            <tr class="border-b border-white/5 hover:bg-white/5">
+                                <td class="py-2 px-3 text-gray-400 text-xs">${formatDateTime(log.timestamp)}</td>
+                                <td class="py-2 px-3 text-right ${latencyClass}">${log.latency_ms ? log.latency_ms.toFixed(1) + ' ms' : '--'}</td>
+                                <td class="py-2 px-3 text-right">${log.packet_loss.toFixed(1)}%</td>
+                                <td class="py-2 px-3 text-center">
+                                    <span class="px-2 py-0.5 ${statusClass} rounded text-xs">${log.status}</span>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                } else {
+                    logsTable.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-gray-500">No logs available</td></tr>';
+                }
+                
+            } catch (error) {
+                console.error('Failed to load target details:', error);
+            }
+        }
+
+        // Store current target data for download
+        let currentTargetData = null;
+
+        async function downloadTargetStats(format) {
+            if (!currentTargetName) return;
+            
+            try {
+                // Fetch full data for download
+                const response = await fetch(`/api/analytics/ping?target=${encodeURIComponent(currentTargetName)}&hours=168`);
+                const data = await response.json();
+                
+                const stats = data.overall_statistics[0] || {};
+                const targetIp = document.getElementById('target-modal-ip').textContent;
+                
+                if (format === 'json') {
+                    // Create JSON export
+                    const exportData = {
+                        target: {
+                            name: currentTargetName,
+                            ip: targetIp
+                        },
+                        exportDate: new Date().toISOString(),
+                        period: '7 days',
+                        summary: {
+                            totalPings: stats.total_pings || 0,
+                            successfulPings: stats.successful_pings || 0,
+                            timeouts: stats.timeouts || 0,
+                            errors: stats.errors || 0,
+                            successRate: stats.total_pings > 0 ? ((stats.successful_pings / stats.total_pings) * 100).toFixed(2) + '%' : '0%',
+                            avgPacketLoss: stats.avg_packet_loss ? stats.avg_packet_loss.toFixed(2) + '%' : '0%'
+                        },
+                        latency: {
+                            min: stats.min_latency ? stats.min_latency.toFixed(2) : null,
+                            avg: stats.avg_latency ? stats.avg_latency.toFixed(2) : null,
+                            max: stats.max_latency ? stats.max_latency.toFixed(2) : null
+                        },
+                        hourlyBreakdown: data.hourly_breakdown || [],
+                        recentLogs: data.recent_logs || []
+                    };
+                    
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    downloadBlob(blob, `${currentTargetName.replace(/\s+/g, '_')}_stats_${getDateString()}.json`);
+                    
+                } else if (format === 'csv') {
+                    // Create CSV export
+                    let csv = 'NetMonitor Pro - Target Statistics Report\n';
+                    csv += `Target Name,${currentTargetName}\n`;
+                    csv += `Target IP,${targetIp}\n`;
+                    csv += `Export Date,${new Date().toLocaleString()}\n`;
+                    csv += `Period,Last 7 days\n\n`;
+                    
+                    csv += 'SUMMARY STATISTICS\n';
+                    csv += 'Metric,Value\n';
+                    csv += `Total Pings,${stats.total_pings || 0}\n`;
+                    csv += `Successful Pings,${stats.successful_pings || 0}\n`;
+                    csv += `Timeouts,${stats.timeouts || 0}\n`;
+                    csv += `Success Rate,${stats.total_pings > 0 ? ((stats.successful_pings / stats.total_pings) * 100).toFixed(2) : 0}%\n`;
+                    csv += `Avg Packet Loss,${stats.avg_packet_loss ? stats.avg_packet_loss.toFixed(2) : 0}%\n`;
+                    csv += `Min Latency (ms),${stats.min_latency ? stats.min_latency.toFixed(2) : 'N/A'}\n`;
+                    csv += `Avg Latency (ms),${stats.avg_latency ? stats.avg_latency.toFixed(2) : 'N/A'}\n`;
+                    csv += `Max Latency (ms),${stats.max_latency ? stats.max_latency.toFixed(2) : 'N/A'}\n\n`;
+                    
+                    csv += 'HOURLY BREAKDOWN\n';
+                    csv += 'Hour,Total Pings,Timeouts,Avg Latency (ms),Max Latency (ms)\n';
+                    if (data.hourly_breakdown) {
+                        for (let h = 0; h < 24; h++) {
+                            const hourData = data.hourly_breakdown.find(d => parseInt(d.hour) === h);
+                            if (hourData) {
+                                csv += `${h.toString().padStart(2, '0')}:00,${hourData.total_pings || 0},${hourData.timeouts || 0},${hourData.avg_latency ? hourData.avg_latency.toFixed(2) : 'N/A'},${hourData.max_latency ? hourData.max_latency.toFixed(2) : 'N/A'}\n`;
+                            } else {
+                                csv += `${h.toString().padStart(2, '0')}:00,0,0,N/A,N/A\n`;
+                            }
+                        }
+                    }
+                    csv += '\n';
+                    
+                    csv += 'PING LOGS\n';
+                    csv += 'Timestamp,Latency (ms),Packet Loss (%),Status\n';
+                    if (data.recent_logs) {
+                        data.recent_logs.forEach(log => {
+                            csv += `${log.timestamp},${log.latency_ms || 'N/A'},${log.packet_loss.toFixed(2)},${log.status}\n`;
+                        });
+                    }
+                    
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    downloadBlob(blob, `${currentTargetName.replace(/\s+/g, '_')}_stats_${getDateString()}.csv`);
+                }
+                
+                addLog(`Downloaded ${format.toUpperCase()} stats for ${currentTargetName}`, 'success');
+                
+            } catch (error) {
+                console.error('Failed to download stats:', error);
+                alert('Failed to download statistics. Please try again.');
+            }
+        }
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function getDateString() {
+            const now = new Date();
+            return `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}`;
+        }
+
+        // Close target modal on escape key and backdrop click
+        document.getElementById('target-details-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'target-details-modal') {
+                closeTargetDetailsModal();
+            }
+        });
+
+        // Add Target Modal functions
+        function openAddTargetModal() {
+            document.getElementById('add-target-modal').classList.remove('hidden');
+            document.getElementById('target-name').focus();
+            document.getElementById('add-target-error').classList.add('hidden');
+        }
+
+        function closeAddTargetModal() {
+            document.getElementById('add-target-modal').classList.add('hidden');
+            document.getElementById('add-target-form').reset();
+            document.getElementById('add-target-error').classList.add('hidden');
+        }
+
+        async function submitAddTarget(event) {
+            event.preventDefault();
+            
+            const name = document.getElementById('target-name').value.trim();
+            const ip = document.getElementById('target-ip').value.trim();
+            const enabled = document.getElementById('target-enabled').checked;
+            const errorDiv = document.getElementById('add-target-error');
+            const submitBtn = document.getElementById('add-target-btn');
+            
+            // Disable button during submission
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Adding...';
+            
+            try {
+                const response = await fetch('/api/targets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, ip, enabled })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to add target');
+                }
+                
+                // Success
+                closeAddTargetModal();
+                addLog(`Added new target: ${name} (${ip})`, 'success');
+                
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-plus mr-2"></i> Add Target';
+            }
+        }
+
+        async function deleteTarget(targetName) {
+            if (!confirm(`Are you sure you want to delete "${targetName}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/targets/${encodeURIComponent(targetName)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Failed to delete target');
+                }
+                
+                addLog(`Deleted target: ${targetName}`, 'warning');
+                
+                // Remove from local data
+                delete pingData[targetName];
+                
+                // Refresh chart datasets
+                latencyChart.data.datasets = latencyChart.data.datasets.filter(
+                    ds => ds.label !== targetName
+                );
+                latencyChart.update();
+                
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function toggleTarget(targetName, enabled) {
+            try {
+                const response = await fetch(`/api/targets/${encodeURIComponent(targetName)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+                
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Failed to update target');
+                }
+                
+                addLog(`${enabled ? 'Enabled' : 'Disabled'} target: ${targetName}`, 'info');
+                
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Analytics functions
+        async function loadAnalytics() {
+            const target = document.getElementById('analytics-target-filter').value;
+            const hours = document.getElementById('analytics-hours-filter').value;
+            
+            try {
+                const url = `/api/analytics/ping?hours=${hours}${target ? '&target=' + encodeURIComponent(target) : ''}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                updateAnalyticsUI(data);
+            } catch (error) {
+                console.error('Failed to load analytics:', error);
+            }
+        }
+
+        function updateAnalyticsUI(data) {
+            // Calculate totals from overall statistics
+            let totalPings = 0, successfulPings = 0, totalTimeouts = 0;
+            let maxLatency = 0, avgLatencySum = 0, avgLatencyCount = 0;
+            
+            data.overall_statistics.forEach(stat => {
+                totalPings += stat.total_pings || 0;
+                successfulPings += stat.successful_pings || 0;
+                totalTimeouts += stat.timeouts || 0;
+                if (stat.max_latency && stat.max_latency > maxLatency) {
+                    maxLatency = stat.max_latency;
+                }
+                if (stat.avg_latency) {
+                    avgLatencySum += stat.avg_latency * stat.total_pings;
+                    avgLatencyCount += stat.total_pings;
+                }
+            });
+            
+            const avgLatency = avgLatencyCount > 0 ? avgLatencySum / avgLatencyCount : 0;
+            const successRate = totalPings > 0 ? (successfulPings / totalPings * 100) : 0;
+            
+            // Update stat cards
+            document.getElementById('analytics-peak-latency').textContent = maxLatency > 0 ? `${maxLatency.toFixed(1)} ms` : '-- ms';
+            document.getElementById('analytics-avg-latency').textContent = avgLatency > 0 ? `${avgLatency.toFixed(1)} ms` : '-- ms';
+            document.getElementById('analytics-timeouts').textContent = totalTimeouts;
+            document.getElementById('analytics-success-rate').textContent = `${successRate.toFixed(1)}%`;
+            
+            // Update worst hour alert
+            const worstHourAlert = document.getElementById('worst-hour-alert');
+            if (data.worst_hour) {
+                const hour = parseInt(data.worst_hour.hour);
+                const hourStr = `${hour}:00 - ${(hour + 1) % 24}:00`;
+                let message = '';
+                if (data.worst_hour.reason === 'timeouts') {
+                    message = `Most network issues occur around ${hourStr} with ${data.worst_hour.value} timeouts recorded.`;
+                } else {
+                    message = `Highest average latency occurs around ${hourStr} (${data.worst_hour.value.toFixed(1)} ms).`;
+                }
+                document.getElementById('worst-hour-message').textContent = message;
+                worstHourAlert.classList.remove('hidden');
+            } else {
+                worstHourAlert.classList.add('hidden');
+            }
+            
+            // Update peak latencies list
+            const peakList = document.getElementById('peak-latencies-list');
+            if (data.peak_latencies && data.peak_latencies.length > 0) {
+                peakList.innerHTML = data.peak_latencies.slice(0, 5).map(p => `
+                    <div class="flex items-center justify-between p-2 bg-black/20 rounded-lg">
+                        <div>
+                            <span class="font-medium">${p.target_name}</span>
+                            <span class="text-gray-400 text-xs ml-2">${formatDateTime(p.timestamp)}</span>
+                        </div>
+                        <span class="text-red-400 font-bold">${p.latency_ms.toFixed(1)} ms</span>
+                    </div>
+                `).join('');
+            } else {
+                peakList.innerHTML = '<p class="text-gray-500 text-sm">No data available</p>';
+            }
+            
+            // Update timeout incidents list
+            const timeoutList = document.getElementById('timeout-incidents-list');
+            if (data.timeout_incidents && data.timeout_incidents.length > 0) {
+                timeoutList.innerHTML = data.timeout_incidents.slice(0, 10).map(t => `
+                    <div class="flex items-center justify-between p-2 bg-black/20 rounded-lg">
+                        <span class="font-medium">${t.target_name}</span>
+                        <span class="text-gray-400 text-xs">${formatDateTime(t.timestamp)}</span>
+                    </div>
+                `).join('');
+            } else {
+                timeoutList.innerHTML = '<p class="text-green-400 text-sm"><i class="fas fa-check-circle mr-1"></i> No timeouts recorded</p>';
+            }
+            
+            // Update per-target statistics table
+            const statsTable = document.getElementById('target-stats-table');
+            if (data.overall_statistics && data.overall_statistics.length > 0) {
+                statsTable.innerHTML = data.overall_statistics.map(stat => {
+                    const successRate = stat.total_pings > 0 ? (stat.successful_pings / stat.total_pings * 100) : 0;
+                    const successClass = successRate >= 99 ? 'text-green-400' : successRate >= 95 ? 'text-yellow-400' : 'text-red-400';
+                    return `
+                        <tr class="border-b border-white/5 hover:bg-white/5">
+                            <td class="py-2 px-3 font-medium">${stat.target_name}</td>
+                            <td class="py-2 px-3 text-right">${stat.total_pings}</td>
+                            <td class="py-2 px-3 text-right ${successClass}">${successRate.toFixed(1)}%</td>
+                            <td class="py-2 px-3 text-right text-yellow-400">${stat.timeouts || 0}</td>
+                            <td class="py-2 px-3 text-right">${stat.avg_latency ? stat.avg_latency.toFixed(1) : '--'}</td>
+                            <td class="py-2 px-3 text-right text-green-400">${stat.min_latency ? stat.min_latency.toFixed(1) : '--'}</td>
+                            <td class="py-2 px-3 text-right text-red-400">${stat.max_latency ? stat.max_latency.toFixed(1) : '--'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                statsTable.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-gray-500">No data available</td></tr>';
+            }
+            
+            // Update hourly chart
+            updateHourlyChart(data.hourly_breakdown);
+        }
+
+        function updateHourlyChart(hourlyData) {
+            if (!hourlyChart) return;
+            
+            // Prepare data for all 24 hours
+            const labels = [];
+            const latencyData = [];
+            const timeoutData = [];
+            
+            for (let h = 0; h < 24; h++) {
+                labels.push(`${h.toString().padStart(2, '0')}:00`);
+                const hourData = hourlyData.find(d => parseInt(d.hour) === h);
+                latencyData.push(hourData ? hourData.avg_latency || 0 : 0);
+                timeoutData.push(hourData ? hourData.timeouts || 0 : 0);
+            }
+            
+            hourlyChart.data.labels = labels;
+            hourlyChart.data.datasets[0].data = latencyData;
+            hourlyChart.data.datasets[1].data = timeoutData;
+            hourlyChart.update();
+        }
+
+        function formatDateTime(isoString) {
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+
+        // Ping logs functions
+        async function loadPingLogs(page = 1) {
+            if (page < 1) return;
+            
+            const target = document.getElementById('logs-target-filter').value;
+            const status = document.getElementById('logs-status-filter').value;
+            
+            try {
+                let url = `/api/logs/ping?page=${page}&per_page=50`;
+                if (target) url += `&target=${encodeURIComponent(target)}`;
+                if (status) url += `&status=${encodeURIComponent(status)}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                currentLogsPage = data.page;
+                totalLogsPages = data.total_pages;
+                
+                updatePingLogsUI(data);
+            } catch (error) {
+                console.error('Failed to load ping logs:', error);
+            }
+        }
+
+        function updatePingLogsUI(data) {
+            const table = document.getElementById('ping-logs-table');
+            
+            if (data.logs && data.logs.length > 0) {
+                table.innerHTML = data.logs.map(log => {
+                    const statusClass = log.status === 'success' ? 'bg-green-500' : 
+                                       log.status === 'timeout' ? 'bg-yellow-500' : 'bg-red-500';
+                    const latencyClass = log.latency_ms > 100 ? 'text-yellow-400' : 
+                                        log.latency_ms > 50 ? 'text-white' : 'text-green-400';
+                    return `
+                        <tr class="border-b border-white/5 hover:bg-white/5">
+                            <td class="py-2 px-3 text-gray-400 text-xs">${formatDateTime(log.timestamp)}</td>
+                            <td class="py-2 px-3 font-medium">${log.target_name}</td>
+                            <td class="py-2 px-3 text-gray-400">${log.target_ip}</td>
+                            <td class="py-2 px-3 text-right ${latencyClass}">${log.latency_ms ? log.latency_ms.toFixed(1) + ' ms' : '--'}</td>
+                            <td class="py-2 px-3 text-right">${log.packet_loss.toFixed(1)}%</td>
+                            <td class="py-2 px-3 text-center">
+                                <span class="px-2 py-1 ${statusClass} rounded text-xs font-medium">${log.status}</span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                table.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-gray-500">No logs found</td></tr>';
+            }
+            
+            // Update pagination
+            document.getElementById('logs-pagination-info').textContent = 
+                `Showing ${data.logs.length} of ${data.total} records`;
+            document.getElementById('logs-page-indicator').textContent = 
+                `Page ${data.page} of ${data.total_pages}`;
+            
+            document.getElementById('logs-prev-btn').disabled = data.page <= 1;
+            document.getElementById('logs-next-btn').disabled = data.page >= data.total_pages;
+        }
+
+        // Populate target filter dropdowns
+        function updateTargetFilters(targets) {
+            knownTargets = targets;
+            const analyticsFilter = document.getElementById('analytics-target-filter');
+            const logsFilter = document.getElementById('logs-target-filter');
+            
+            const options = targets.map(t => `<option value="${t}">${t}</option>`).join('');
+            
+            analyticsFilter.innerHTML = '<option value="">All Targets</option>' + options;
+            logsFilter.innerHTML = '<option value="">All Targets</option>' + options;
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAddTargetModal();
+                closeTargetDetailsModal();
+            }
+        });
+
+        // Close modal on backdrop click
+        document.getElementById('add-target-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'add-target-modal') {
+                closeAddTargetModal();
+            }
+        });
+
+        // Initialize Charts
+        function initCharts() {
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { unit: 'minute' },
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: 'rgba(255,255,255,0.5)' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: 'rgba(255,255,255,0.5)' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: 'rgba(255,255,255,0.7)' }
+                    }
+                }
+            };
+
+            // Latency Chart
+            const latencyCtx = document.getElementById('latencyChart').getContext('2d');
+            latencyChart = new Chart(latencyCtx, {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    ...chartOptions,
+                    scales: {
+                        ...chartOptions.scales,
+                        y: {
+                            ...chartOptions.scales.y,
+                            title: { display: true, text: 'Latency (ms)', color: 'rgba(255,255,255,0.5)' }
+                        }
+                    }
+                }
+            });
+
+            // Bandwidth Chart
+            const bandwidthCtx = document.getElementById('bandwidthChart').getContext('2d');
+            bandwidthChart = new Chart(bandwidthCtx, {
+                type: 'line',
+                data: { datasets: [] },
+                options: {
+                    ...chartOptions,
+                    scales: {
+                        ...chartOptions.scales,
+                        y: {
+                            ...chartOptions.scales.y,
+                            title: { display: true, text: 'Bytes/s', color: 'rgba(255,255,255,0.5)' },
+                            ticks: {
+                                ...chartOptions.scales.y.ticks,
+                                callback: function(value) {
+                                    return formatBytes(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Hourly Analytics Chart
+            const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+            hourlyChart = new Chart(hourlyCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Avg Latency (ms)',
+                            data: [],
+                            backgroundColor: 'rgba(34, 211, 238, 0.6)',
+                            borderColor: 'rgb(34, 211, 238)',
+                            borderWidth: 1,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Timeouts',
+                            data: [],
+                            backgroundColor: 'rgba(251, 191, 36, 0.6)',
+                            borderColor: 'rgb(251, 191, 36)',
+                            borderWidth: 1,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 300 },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: 'rgba(255,255,255,0.5)' }
+                        },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: 'rgba(34, 211, 238, 0.8)' },
+                            title: { display: true, text: 'Latency (ms)', color: 'rgba(34, 211, 238, 0.8)' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            grid: { display: false },
+                            ticks: { color: 'rgba(251, 191, 36, 0.8)' },
+                            title: { display: true, text: 'Timeouts', color: 'rgba(251, 191, 36, 0.8)' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: 'rgba(255,255,255,0.7)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update ping UI
+        function updatePingUI(data) {
+            const container = document.getElementById('ping-targets');
+            const colors = ['purple', 'green', 'blue', 'pink', 'yellow', 'cyan', 'orange', 'red'];
+            
+            if (data.length === 0) {
+                container.innerHTML = `
+                    <div class="text-gray-400 text-center py-8">
+                        <i class="fas fa-plus-circle text-4xl mb-3 text-purple-400"></i>
+                        <p>No targets configured</p>
+                        <button onclick="openAddTargetModal()" class="mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm">
+                            Add Your First Target
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = data.map((result, index) => {
+                const statusClass = result.status === 'success' ? 'status-success' : 
+                                   result.status === 'timeout' ? 'status-error' : 'status-warning';
+                const pulseClass = result.status === 'success' ? 'pulse-success' : 'pulse-error';
+                const latencyDisplay = result.latency_ms ? `${result.latency_ms.toFixed(1)} ms` : 'Timeout';
+                const color = colors[index % colors.length];
+                
+                return `
+                    <div class="flex items-center justify-between p-4 bg-black/20 rounded-xl group cursor-pointer hover:bg-black/30 transition"
+                             onclick="openTargetDetailsModal('${result.target_name}', '${result.target_ip}')">
+                        <div class="flex items-center space-x-4">
+                            <div class="w-3 h-3 rounded-full bg-${color}-400 ${pulseClass}"></div>
+                            <div>
+                                <p class="font-medium">${result.target_name}</p>
+                                <p class="text-sm text-gray-400">${result.target_ip}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <div class="text-right">
+                                <p class="text-lg font-bold ${statusClass}">${latencyDisplay}</p>
+                                <p class="text-xs text-gray-400">Loss: ${result.packet_loss.toFixed(1)}%</p>
+                            </div>
+                            <div class="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
+                                <button onclick="event.stopPropagation(); deleteTarget('${result.target_name}')" 
+                                        class="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition"
+                                        title="Delete target">
+                                    <i class="fas fa-trash text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('ping-last-update').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+            
+            // Update statistics
+            const validLatencies = data.filter(r => r.latency_ms).map(r => r.latency_ms);
+            if (validLatencies.length > 0) {
+                const avgLatency = validLatencies.reduce((a, b) => a + b, 0) / validLatencies.length;
+                document.getElementById('stat-latency').textContent = `${avgLatency.toFixed(1)} ms`;
+            }
+            document.getElementById('stat-targets').textContent = data.length;
+            
+            // Update chart data
+            const timestamp = new Date();
+            data.forEach((result, index) => {
+                if (!pingData[result.target_name]) {
+                    pingData[result.target_name] = [];
+                    const color = colors[index % colors.length];
+                    const rgb = getColorRGB(color);
+                    latencyChart.data.datasets.push({
+                        label: result.target_name,
+                        data: pingData[result.target_name],
+                        borderColor: `rgb(${rgb})`,
+                        backgroundColor: `rgba(${rgb}, 0.15)`,
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointBackgroundColor: `rgb(${rgb})`
+                    });
+                }
+                
+                pingData[result.target_name].push({
+                    x: timestamp,
+                    y: result.latency_ms || 0
+                });
+                
+                // Keep only recent data
+                if (pingData[result.target_name].length > MAX_DATA_POINTS) {
+                    pingData[result.target_name].shift();
+                }
+            });
+            
+            latencyChart.update('none');
+        }
+
+        // Update bandwidth UI
+        function updateBandwidthUI(data) {
+            const container = document.getElementById('bandwidth-gateways');
+            
+            container.innerHTML = data.map(measurement => {
+                return `
+                    <div class="p-4 bg-black/20 rounded-xl">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <p class="font-medium">${measurement.gateway_name}</p>
+                                <p class="text-sm text-gray-400">${measurement.interface}</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="text-center p-3 bg-blue-500/20 rounded-lg">
+                                <i class="fas fa-download text-blue-400 mb-1"></i>
+                                <p class="text-lg font-bold text-blue-400">${measurement.download_rate_formatted}</p>
+                                <p class="text-xs text-gray-400">Download</p>
+                            </div>
+                            <div class="text-center p-3 bg-pink-500/20 rounded-lg">
+                                <i class="fas fa-upload text-pink-400 mb-1"></i>
+                                <p class="text-lg font-bold text-pink-400">${measurement.upload_rate_formatted}</p>
+                                <p class="text-xs text-gray-400">Upload</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('bandwidth-last-update').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+            
+            // Update statistics
+            if (data.length > 0) {
+                const totalDownload = data.reduce((sum, m) => sum + m.download_rate, 0);
+                const totalUpload = data.reduce((sum, m) => sum + m.upload_rate, 0);
+                document.getElementById('stat-download').textContent = formatBytesRate(totalDownload);
+                document.getElementById('stat-upload').textContent = formatBytesRate(totalUpload);
+            }
+            
+            // Update chart data
+            const timestamp = new Date();
+            data.forEach((measurement, index) => {
+                const dlKey = `${measurement.gateway_name} (DL)`;
+                const ulKey = `${measurement.gateway_name} (UL)`;
+                
+                if (!bandwidthData[dlKey]) {
+                    bandwidthData[dlKey] = [];
+                    bandwidthData[ulKey] = [];
+                    
+                    bandwidthChart.data.datasets.push({
+                        label: dlKey,
+                        data: bandwidthData[dlKey],
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    });
+                    
+                    bandwidthChart.data.datasets.push({
+                        label: ulKey,
+                        data: bandwidthData[ulKey],
+                        borderColor: 'rgb(236, 72, 153)',
+                        backgroundColor: 'rgba(236, 72, 153, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    });
+                }
+                
+                bandwidthData[dlKey].push({ x: timestamp, y: measurement.download_rate });
+                bandwidthData[ulKey].push({ x: timestamp, y: measurement.upload_rate });
+                
+                // Keep only recent data
+                if (bandwidthData[dlKey].length > MAX_DATA_POINTS) {
+                    bandwidthData[dlKey].shift();
+                    bandwidthData[ulKey].shift();
+                }
+            });
+            
+            bandwidthChart.update('none');
+        }
+
+        // Get RGB color for charts - vibrant colors for better visibility
+        function getColorRGB(color) {
+            const colors = {
+                'purple': '167, 139, 250',   // Bright purple
+                'green': '52, 211, 153',     // Emerald green
+                'blue': '96, 165, 250',      // Sky blue
+                'pink': '244, 114, 182',     // Hot pink
+                'yellow': '250, 204, 21',    // Bright yellow
+                'cyan': '34, 211, 238',      // Cyan
+                'orange': '251, 146, 60',    // Orange
+                'red': '248, 113, 113'       // Red
+            };
+            return colors[color] || '156, 163, 175';
+        }
+
+        // Load alerts
+        async function loadAlerts() {
+            try {
+                const response = await fetch('/api/alerts?hours=24');
+                const data = await response.json();
+                const container = document.getElementById('alerts-container');
+                const badge = document.getElementById('alert-badge');
+                
+                const unacknowledged = data.data.filter(a => !a.acknowledged);
+                
+                if (unacknowledged.length > 0) {
+                    badge.textContent = unacknowledged.length;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+                
+                if (data.data.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-gray-400 text-center py-4">
+                            <i class="fas fa-check-circle text-2xl mb-2 text-green-400"></i>
+                            <p>No alerts</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = data.data.map(alert => {
+                    const severityColors = {
+                        'critical': 'border-red-500 bg-red-500/10',
+                        'warning': 'border-yellow-500 bg-yellow-500/10',
+                        'info': 'border-blue-500 bg-blue-500/10'
+                    };
+                    const colorClass = severityColors[alert.severity] || severityColors['info'];
+                    const opacity = alert.acknowledged ? 'opacity-50' : '';
+                    
+                    return `
+                        <div class="p-3 rounded-lg border-l-4 ${colorClass} ${opacity}">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="font-medium">${alert.message}</p>
+                                    <p class="text-xs text-gray-400">${alert.target_name || 'System'} • ${formatTime(alert.timestamp)}</p>
+                                </div>
+                                ${!alert.acknowledged ? `
+                                    <button onclick="acknowledgeAlert(${alert.id})" class="text-xs px-2 py-1 bg-white/10 rounded hover:bg-white/20">
+                                        Acknowledge
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Failed to load alerts:', error);
+            }
+        }
+
+        // Acknowledge alert
+        async function acknowledgeAlert(alertId) {
+            try {
+                await fetch(`/api/alerts/${alertId}/acknowledge`, { method: 'POST' });
+                loadAlerts();
+                addLog(`Alert ${alertId} acknowledged`, 'success');
+            } catch (error) {
+                console.error('Failed to acknowledge alert:', error);
+            }
+        }
+
+        // WebSocket connection
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                document.getElementById('ws-indicator').className = 'w-3 h-3 rounded-full bg-green-500';
+                document.getElementById('ws-status').textContent = 'Connected';
+                addLog('WebSocket connected', 'success');
+            };
+            
+            ws.onclose = () => {
+                document.getElementById('ws-indicator').className = 'w-3 h-3 rounded-full bg-red-500';
+                document.getElementById('ws-status').textContent = 'Disconnected';
+                addLog('WebSocket disconnected, reconnecting...', 'warning');
+                
+                // Reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                addLog('WebSocket error', 'error');
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                
+                switch (message.type) {
+                    case 'initial_status':
+                        // Handle initial status
+                        if (message.data.ping_results) {
+                            const pingResults = Object.entries(message.data.ping_results).map(([name, data]) => ({
+                                target_name: name,
+                                ...data
+                            }));
+                            if (pingResults.length > 0) {
+                                updatePingUI(pingResults);
+                            }
+                        }
+                        break;
+                    
+                    case 'ping_update':
+                        updatePingUI(message.data);
+                        // Update target filters with known targets
+                        const targetNames = message.data.map(d => d.target_name);
+                        updateTargetFilters(targetNames);
+                        addLog(`Ping update: ${message.data.length} targets checked`, 'info');
+                        break;
+                    
+                    case 'bandwidth_update':
+                        updateBandwidthUI(message.data);
+                        break;
+                    
+                    case 'alert':
+                        loadAlerts();
+                        addLog(`New alert: ${message.data.message}`, 'warning');
+                        break;
+                }
+            };
+        }
+
+        // Keep WebSocket alive
+        setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 30000);
+
+        // Refresh analytics periodically
+        setInterval(() => {
+            loadAnalytics();
+        }, 60000); // Every minute
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            connectWebSocket();
+            loadAlerts();
+            loadAnalytics();
+            loadPingLogs(1);
+            
+            addLog('Dashboard initialized', 'success');
+        });
+    </script>
+</body>
+</html>
